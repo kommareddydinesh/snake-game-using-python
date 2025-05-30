@@ -4,140 +4,211 @@ pip install pygame
 
 
 import pygame
-import time
 import random
+import os
 
-# Initialize pygame
+# Initialize pygame and mixer
 pygame.init()
 
+# Sound file paths (update these if you move the files)
+EAT_SOUND_PATH = r"C:\Users\kdine\OneDrive\Documents\Desktop\instagram-clone\eating-crackers-sound-341911.mp3"
+MUSIC_PATH = r"C:\Users\kdine\OneDrive\Documents\Desktop\instagram-clone\primitive-snake-charmer-melody-104216.mp3"
+
+# Load and play background music (loop indefinitely)
+try:
+    pygame.mixer.music.load(MUSIC_PATH)
+    pygame.mixer.music.play(-1)
+except pygame.error as e:
+    print(f"Warning: Music file not found or failed to load: {MUSIC_PATH}\n{e}")
+
+# Function to safely load short sounds (like eating)
+def load_sound(path):
+    try:
+        return pygame.mixer.Sound(path)
+    except (pygame.error, FileNotFoundError) as e:
+        print(f"Warning: Sound file not found or failed to load: {path}\n{e}")
+        return None
+
+eat_sound = load_sound(EAT_SOUND_PATH)
+
 # Colors
-white = (255, 255, 255)
-yellow = (255, 255, 102)
-black = (0, 0, 0)
-red = (213, 50, 80)
-green = (0, 255, 0)
-blue = (50, 153, 213)
+WHITE, DARK_GREEN, GREEN, BLACK = (250, 250, 250), (0, 100, 0), (0, 255, 0), (0, 0, 0)
+RED, YELLOW, PURPLE, PINK, BLUE, SHADOW = (200, 30, 60), (255, 225, 0), (160, 32, 240), (255, 105, 180), (50, 153, 213), (30, 30, 30)
 
-# Display dimensions
-width = 600
-height = 400
+# Display settings
+WIDTH, HEIGHT = 800, 600
+BLOCK_SIZE = 20
+FPS = 15
 
-# Create display
-window = pygame.display.set_mode((width, height))
-pygame.display.set_caption('🐍 Snake Game by ChatGPT')
-
-# Clock and block size
-clock = pygame.time.Clock()
-block_size = 20
-snake_speed = 15
+window = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("🍎 Enhanced Snake Game")
 
 # Fonts
-font_style = pygame.font.SysFont("bahnschrift", 25)
-score_font = pygame.font.SysFont("comicsansms", 30)
+font = pygame.font.SysFont("segoeuisemibold", 28)
+score_font = pygame.font.SysFont("comicsansms", 36)
 
+clock = pygame.time.Clock()
 
-def score_display(score):
-    value = score_font.render(f"Score: {score}", True, blue)
-    window.blit(value, [0, 0])
+HIGHSCORE_FILE = "highscore.txt"
 
+def load_highscore():
+    if os.path.exists(HIGHSCORE_FILE):
+        with open(HIGHSCORE_FILE, "r") as file:
+            return int(file.read())
+    return 0
 
-def draw_snake(block_size, snake_list):
+def save_highscore(score):
+    with open(HIGHSCORE_FILE, "w") as file:
+        file.write(str(score))
+
+# Food types
+FOOD_TYPES = [
+    {"name": "Apple", "color": RED, "score": 1},
+    {"name": "Grape", "color": PURPLE, "score": 2},
+    {"name": "Banana", "color": YELLOW, "score": 3},
+    {"name": "Candy", "color": PINK, "score": 5},
+]
+
+def draw_text_center(text, color, y, shadow=False):
+    render = font.render(text, True, SHADOW if shadow else color)
+    rect = render.get_rect(center=(WIDTH // 2, y))
+    if shadow:
+        rect.x += 2
+        rect.y += 2
+    window.blit(render, rect)
+
+def draw_score(score, level, high_score):
+    value = score_font.render(f"Score: {score}  Level: {level}  High Score: {high_score}", True, BLUE)
+    window.blit(value, [20, 20])
+
+def draw_snake(snake_list):
     for block in snake_list:
-        pygame.draw.rect(window, green, [block[0], block[1], block_size, block_size])
+        pygame.draw.rect(window, DARK_GREEN, [block[0], block[1], BLOCK_SIZE, BLOCK_SIZE], border_radius=5)
+        pygame.draw.rect(window, GREEN, [block[0]+4, block[1]+4, BLOCK_SIZE-8, BLOCK_SIZE-8], border_radius=3)
 
+def draw_food(food):
+    x, y = food["pos"]
+    cx, cy = int(x + BLOCK_SIZE / 2), int(y + BLOCK_SIZE / 2)
+    color = food["color"]
+    shape = food["name"]
 
-def message(msg, color):
-    mesg = font_style.render(msg, True, color)
-    window.blit(mesg, [width / 6, height / 3])
+    if shape == "Apple":
+        pygame.draw.circle(window, color, (cx, cy), BLOCK_SIZE // 2)
+    elif shape == "Grape":
+        pygame.draw.ellipse(window, color, [x, y + 3, BLOCK_SIZE, BLOCK_SIZE - 6])
+    elif shape == "Banana":
+        pygame.draw.polygon(window, color, [(cx, y), (x, y + BLOCK_SIZE), (x + BLOCK_SIZE, y + BLOCK_SIZE)])
+    elif shape == "Candy":
+        pygame.draw.polygon(window, color, [
+            (cx, y), (cx + 4, y + 8), (x + BLOCK_SIZE, y + 8), (cx + 6, y + 14),
+            (x + BLOCK_SIZE - 4, y + BLOCK_SIZE), (cx, y + 16),
+            (x + 4, y + BLOCK_SIZE), (cx - 6, y + 14), (x, y + 8), (cx - 4, y + 8)
+        ])
 
+def generate_food():
+    food_type = random.choice(FOOD_TYPES)
+    x = round(random.randrange(0, WIDTH - BLOCK_SIZE) / 20.0) * 20.0
+    y = round(random.randrange(0, HEIGHT - BLOCK_SIZE) / 20.0) * 20.0
+    return {"pos": [x, y], "color": food_type["color"], "score": food_type["score"], "name": food_type["name"]}
 
-def gameLoop():
+def show_message(msg, sub_msg):
+    window.fill(PINK)
+    draw_text_center(msg, WHITE, HEIGHT // 2 - 20)
+    draw_text_center(sub_msg, WHITE, HEIGHT // 2 + 30)
+    pygame.display.update()
+    pygame.time.wait(1500)
+
+def game_loop():
+    x, y = WIDTH // 2, HEIGHT // 2
+    dx, dy = 0, 0
+
+    snake = []
+    length = 1
+    score = 0
+    level = 1
+    speed = FPS
+    paused = False
+
+    high_score = load_highscore()
+    food = generate_food()
+    running = True
     game_over = False
-    game_close = False
 
-    # Initial position
-    x1 = width / 2
-    y1 = height / 2
-    x1_change = 0
-    y1_change = 0
-
-    snake_list = []
-    length_of_snake = 1
-
-    # Initial food position
-    foodx = round(random.randrange(0, width - block_size) / 20.0) * 20.0
-    foody = round(random.randrange(0, height - block_size) / 20.0) * 20.0
-
-    while not game_over:
-
-        while game_close:
-            window.fill(white)
-            message("You Lost! Press Q-Quit or C-Play Again", red)
-            score_display(length_of_snake - 1)
-            pygame.display.update()
-
+    while running:
+        while game_over:
+            show_message("You Lost!", "Press C to Play Again or Q to Quit")
+            if score > high_score:
+                save_highscore(score)
+                high_score = score
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_q:
-                        game_over = True
-                        game_close = False
-                    if event.key == pygame.K_c:
-                        gameLoop()
+                        running = False
+                        game_over = False
+                    elif event.key == pygame.K_c:
+                        return game_loop()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                game_over = True
+                running = False
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_LEFT and x1_change == 0:
-                    x1_change = -block_size
-                    y1_change = 0
-                elif event.key == pygame.K_RIGHT and x1_change == 0:
-                    x1_change = block_size
-                    y1_change = 0
-                elif event.key == pygame.K_UP and y1_change == 0:
-                    y1_change = -block_size
-                    x1_change = 0
-                elif event.key == pygame.K_DOWN and y1_change == 0:
-                    y1_change = block_size
-                    x1_change = 0
+                if not paused:
+                    if event.key == pygame.K_LEFT and dx == 0:
+                        dx, dy = -BLOCK_SIZE, 0
+                    elif event.key == pygame.K_RIGHT and dx == 0:
+                        dx, dy = BLOCK_SIZE, 0
+                    elif event.key == pygame.K_UP and dy == 0:
+                        dx, dy = 0, -BLOCK_SIZE
+                    elif event.key == pygame.K_DOWN and dy == 0:
+                        dx, dy = 0, BLOCK_SIZE
+                if event.key == pygame.K_p:
+                    paused = not paused
 
-        # If snake goes out of bounds
-        if x1 >= width or x1 < 0 or y1 >= height or y1 < 0:
-            game_close = True
+        if paused:
+            draw_text_center("Paused", BLUE, HEIGHT // 2)
+            pygame.display.update()
+            clock.tick(5)
+            continue
 
-        x1 += x1_change
-        y1 += y1_change
-        window.fill(white)
+        x += dx
+        y += dy
 
-        # Draw food
-        pygame.draw.rect(window, black, [foodx, foody, block_size, block_size])
+        if x >= WIDTH or x < 0 or y >= HEIGHT or y < 0:
+            game_over = True
 
-        # Update snake
-        snake_head = [x1, y1]
-        snake_list.append(snake_head)
-        if len(snake_list) > length_of_snake:
-            del snake_list[0]
+        window.fill(WHITE)
 
-        # Collision with self
-        for block in snake_list[:-1]:
-            if block == snake_head:
-                game_close = True
+        draw_food(food)
+        head = [x, y]
+        snake.append(head)
+        if len(snake) > length:
+            del snake[0]
 
-        draw_snake(block_size, snake_list)
-        score_display(length_of_snake - 1)
+        for segment in snake[:-1]:
+            if segment == head:
+                game_over = True
 
+        draw_snake(snake)
+        draw_score(score, level, high_score)
         pygame.display.update()
 
-        # Eat food
-        if x1 == foodx and y1 == foody:
-            foodx = round(random.randrange(0, width - block_size) / 20.0) * 20.0
-            foody = round(random.randrange(0, height - block_size) / 20.0) * 20.0
-            length_of_snake += 1
+        # Eating food
+        if x == food["pos"][0] and y == food["pos"][1]:
+            score += food["score"]
+            length += 1
+            if eat_sound:
+                eat_sound.play()
+            food = generate_food()
 
-        clock.tick(snake_speed)
+            # Increase difficulty
+            if score % 5 == 0:
+                level += 1
+                speed += 2
+
+        clock.tick(speed)
 
     pygame.quit()
     quit()
 
-
-gameLoop()
+# Start the game
+game_loop()
